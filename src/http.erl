@@ -11,35 +11,87 @@
 
 -export([directive/1, headers/1, content/1, get/2, find/2, headers_to_bin/1, has_header/1 ]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -type request() :: request.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:has_header finds the boundary between the header and the body of the request
 
 -spec has_header(binary()) -> {number(),number()}.
 
 has_header(Data) ->
 	binary:match(Data,<<13,10,13,10>>).
 
--spec directive(binary()) -> []. 
+-ifdef(TEST).
+has_header_test() ->
+	?assert({14,4} == has_header(<<"GET / HTTP/1.1\r\n\r\n">>)),
+	?assertNot({14,4} == has_header(<<"GET /HTTP/1.1\r\n">>)).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:directive splits out each of the 3 elements [ method, path, protocol ]
+
+-spec directive(binary()) -> list(binary()). 
 
 directive(Bin) ->
 	[Line|_] = binary:split(Bin,<<13,10>>),
 	binary:split(Line,<<" ">>,[global]).
 
--spec headers(binary()) -> [].
+-ifdef(TEST).
+directive_test() ->
+	?assert([<<"GET">>,<<"/foo">>,<<"HTTP/1.1">>] == directive(<<"GET /foo HTTP/1.1\r\n">>)).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:headers breaks out a list of [ { key , value  } ] property lists 
+
+-spec headers(binary()) -> list({ string(), string() }).
 
 headers(Bin) ->
 	{[_|Lines],_} = lists:splitwith(fun(A) -> A =/= <<>> end, binary:split(Bin,<<13,10>>,[ global ])),
 	lists:map( fun([X,Y]) -> { string:to_lower(binary:bin_to_list(X)), binary:bin_to_list(Y) } end, 
 		lists:map(fun (B) -> binary:split(B,<<": ">>) end, Lines)).
 
+-ifdef(TEST).
+headers_test() ->
+	?assert([ { "content-type" , "text/html" }, { "content-length", "11" } ] ==
+		headers(<<"GET / HTTP/1.1\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n">>)).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:get looks up the given header string in the binary request
+
 -spec get(string(),binary()) -> string().
 
 get(Key,Bin) ->
 	proplists:get_value(string:to_lower(Key),headers(Bin)).
 
+-ifdef(TEST).
+get_test() ->
+	?assert( "text/html" ==
+		get("Content-Type",<<"GET / HTTP/1.1\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n">>)),
+	?assert( "11" ==
+		get("Content-Length",<<"GET / HTTP/1.1\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n">>)).
+-endif.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:find looks up the header value in the request object's headers
+
 -spec find(request(),string()) -> string().
 
 find(Request,Key) ->
 	proplists:get_value(string:to_lower(Key),Request#request.headers).
+
+-ifdef(TEST).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:transfer_encoding detects whether or not the data is chunked
+
 
 transfer_encoding(Header) ->
 	case get("transfer-encoding",Header) of
