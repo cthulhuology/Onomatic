@@ -11,24 +11,35 @@
 
 -export([directive/1, headers/1, content/1, get/2, find/2, headers_to_bin/1, has_header/1 ]).
 
+-type request() :: request.
+
+-spec has_header(binary()) -> {number(),number()}.
+
 has_header(Data) ->
 	binary:match(Data,<<13,10,13,10>>).
+
+-spec directive(binary()) -> []. 
 
 directive(Bin) ->
 	[Line|_] = binary:split(Bin,<<13,10>>),
 	binary:split(Line,<<" ">>,[global]).
+
+-spec headers(binary()) -> [].
 
 headers(Bin) ->
 	{[_|Lines],_} = lists:splitwith(fun(A) -> A =/= <<>> end, binary:split(Bin,<<13,10>>,[ global ])),
 	lists:map( fun([X,Y]) -> { string:to_lower(binary:bin_to_list(X)), binary:bin_to_list(Y) } end, 
 		lists:map(fun (B) -> binary:split(B,<<": ">>) end, Lines)).
 
+-spec get(string(),binary()) -> string().
+
 get(Key,Bin) ->
 	proplists:get_value(string:to_lower(Key),headers(Bin)).
 
+-spec find(request(),string()) -> string().
+
 find(Request,Key) ->
 	proplists:get_value(string:to_lower(Key),Request#request.headers).
-
 
 transfer_encoding(Header) ->
 	case get("transfer-encoding",Header) of
