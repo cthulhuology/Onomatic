@@ -9,13 +9,13 @@
 -copyright("© 2011 David J. Goehrig").
 -include("onomatic.hrl").
 
--export([directive/1, headers/1, content/1, get/2, find/2, headers_to_bin/1, has_header/1 ]).
+-export([directive/1, headers/1, content/1, get/2, find/2, headers_to_bin/1, has_header/1, transfer_encoding/1 ]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type request() :: request.
+-type header() :: list({ string() , string() }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% http:has_header finds the boundary between the header and the body of the request
@@ -48,7 +48,7 @@ directive_test() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% http:headers breaks out a list of [ { key , value  } ] property lists 
 
--spec headers(binary()) -> list({ string(), string() }).
+-spec headers(binary()) -> header().
 
 headers(Bin) ->
 	{[_|Lines],_} = lists:splitwith(fun(A) -> A =/= <<>> end, binary:split(Bin,<<13,10>>,[ global ])),
@@ -79,34 +79,51 @@ get_test() ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% http:find looks up the header value in the request object's headers
+%% http:find looks up the header value in the headers
 
--spec find(request(),string()) -> string().
+-spec find(header(),string()) -> string().
 
-find(Request,Key) ->
-	proplists:get_value(string:to_lower(Key),Request#request.headers).
-
--ifdef(TEST).
--endif.
+find(Key,Headers) ->
+	proplists:get_value(string:to_lower(Key),Headers).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% http:transfer_encoding detects whether or not the data is chunked
 
+-spec transfer_encoding(header()) -> term().
 
 transfer_encoding(Header) ->
-	case get("transfer-encoding",Header) of
+	case find("transfer-encoding",Header) of
 		"chunked" -> chunked;
 		_ -> identity
 	end.
 
+-ifdef(TEST).	
+transfer_encoding_test() ->
+	?assert(transfer_encoding(headers(<<"GET / HTTP/1.1\r\nContent-Length: 11\r\n\r\n">>)) =:= identity),
+	?assert(transfer_encoding(headers(<<"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n">>)) =:= chunked).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% http:content_length returns the content length if any, 0 if none (ie. chunked)
+
+-spec content_length(header()) -> non_neg_integer().
+
 content_length(Header) ->
-	case Length = get("content-length", Header) of
+	case Length = find("content-length", Header) of
 		undefined -> 0;
 		_ -> list_to_integer(Length)
 	end.
 
-chunked_content(Bin) ->
-	chunked_content(Bin,<<>>).
+-ifdef(TEST).
+content_length_test() ->
+	?assert(11 =:= content_length(headers(<<"GET / HTTP/1.1\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n">>))),
+	?assert(0 =:= content_length(headers(<<"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n">>))).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% hex returns the hex value of a list of bytes
+
+-spec hex(list(byte())) -> non_neg_integer().
 
 hex(L) -> hex(L,0).
 
@@ -117,6 +134,20 @@ hex([H|T],Acc) when H >= $a, H =< $f ->
 	hex(T,Acc*16 + (H - $a)+10);
 hex([H|T],Acc) when H >= $A, H =< $F ->
 	hex(T,Acc*16 + (H - $A)+10).
+
+-ifdef(TEST).
+hex_test() ->
+	?assert(hex([]) =:= 0),
+	?assert(hex([$a]) =:= 10),
+	?assert(hex([$a,$b]) =:= 171),
+	?assert(hex([$a,$b,$0]) =:= 2736).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% chunked_content returns
+
+chunked_content(Bin) ->
+	chunked_content(Bin,<<>>).
 
 chunked_content(Bin,Content) ->
 	[ ChunkSize, Data ] = binary:split(Bin,<<13,10>>),
