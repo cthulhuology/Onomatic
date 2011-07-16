@@ -15,6 +15,10 @@
 %% API
 -export([ start_link/0, stop/0, add/2, lookup/1, copy/0 ]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% gen_server callbacks
 -export([ init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3 ]).
 
@@ -45,18 +49,32 @@ copy() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Utilities
 
+path(Source) ->
+	string:tokens(Source,"/").
+
 route(Table, []) ->
 	case ets:lookup(Table,[]) of
 		[{ _, Route }] -> Route;
-		_ -> no_route
+		_ -> []
 	end;
-route(Table, Source) ->
-	io:format("Looking up ~p ~n", [Source]),
-	case ets:lookup(Table,Source) of
-		[] -> route(Table,lists:sublist(Source,length(Source)-1));
+route(Table, Path) ->
+	io:format("Looking up ~p ~n", [Path]),
+	case ets:lookup(Table,Path) of
+		[] -> route(Table,lists:sublist(Path,length(Path)-1));
 		[{ _, Route }] -> Route;
-		_ -> no_route
+		_ -> []
 	end.
+
+-ifdef(TEST).
+route_test() ->
+	Table = ets:new(?MODULE,[]),
+	ets:insert(Table, { path("/foo/bar/"), [ "/foo", "ws://dloh.org/foo" ] }),
+%%	?assertNot(route(Table,path("/baz/bar/baz")) =:= [ "/foo", "ws://dloh.org/foo" ]),
+	?assert(route(Table,path("/foo/bar/baz")) =:= [ "/foo", "ws://dloh.org/foo" ]),
+	?assert(route(Table,path("/foo/bar")) =:= [ "/foo", "ws://dloh.org/foo" ]),
+	?assertNot(route(Table,path("/foo/baz")) =:= [ "/foo", "ws://dloh.org/foo" ]),
+	?assertNot(route(Table,path("/foo")) =:= [ "/foo", "ws://dloh.org/foo" ]).
+-endif.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Handles incoming requests which expect responses
